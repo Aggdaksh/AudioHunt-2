@@ -1,158 +1,267 @@
-# 🎵 AudioHunt
+# AudioHunt
 
-A full-stack audio recognition project inspired by Shazam. AudioHunt lets users record a short clip in the browser, send it to a Go backend, and match it against enrolled songs using custom fingerprinting logic.
+AudioHunt is a full-stack music recognition app inspired by Shazam. It lets a user enroll songs into a personal catalog, record a short live microphone clip in the browser, and identify the closest matching song using a custom audio fingerprinting pipeline.
 
-## ✨ Features
+Live site: [audiohuntnew.vercel.app](https://audiohuntnew.vercel.app/)
 
-- **Audio Recognition Engine:** A Go backend that uses microphone-friendly preprocessing and persisted peak fingerprints for reliable matching.
-- **Premium User Interface:** A modern, immersive glassmorphic UI with dark mode, smooth micro-animations, and dynamic visual feedback during audio recording.
-- **Microphone Integration:** Seamless in-browser audio recording using the browser `MediaRecorder` pipeline.
-- **Scalable Architecture:** Clean separation of concerns with a Go backend REST API, a React frontend, and a PostgreSQL database.
+Repository: [github.com/Aggdaksh/AudioHunt-2](https://github.com/Aggdaksh/AudioHunt-2)
 
-## 🛠 Tech Stack
+## What It Does
 
-### Frontend
-- **Framework:** React 19 + TypeScript + Vite
-- **Styling:** Custom CSS with glassmorphic and premium dark-mode aesthetics
-- **Audio Capture:** RecordRTC for browser microphone access
-- **HTTP Client:** Axios
+AudioHunt has two core flows:
 
-### Backend
-- **Language:** Go (Golang)
-- **Routing:** Gorilla Mux
-- **Audio Processing:** Segment-based fingerprinting for the live MVP, plus an experimental Shazam-style peak-pair DSP path that can be wired in later.
-- **Database:** PostgreSQL
+- Library flow: upload a clean song file, add a title and artist, and store its audio fingerprints in PostgreSQL.
+- Recognition flow: record music through the browser microphone, send the clip to the backend, fingerprint it, and compare it against enrolled tracks.
 
-## 📂 Project Structure
+The result includes the matched song, artist, confidence score, and an estimated position inside the song.
 
-```
-.
-├── backend/                  # Go backend application
-│   ├── cmd/                  # Entry points (main.go)
-│   ├── internal/             # Application code (API routing, DSP logic, song management)
-│   ├── migrations/           # Database setup and schema files
-│   ├── uploads/              # Local upload storage for development
-│   ├── Dockerfile            # Render-ready backend image with ffmpeg
-│   ├── .env                  # Backend environment variables
-│   └── go.mod                # Go module dependencies
-├── frontend/                 # React frontend application
-│   ├── public/               # Static assets
-│   ├── src/                  # React components (AudioRecorder, MatchResults, etc.)
-│   ├── .env.example          # Frontend environment example
-│   ├── package.json          # Node dependencies
-│   └── vite.config.ts        # Vite configuration
-├── docker-compose.yml        # Docker composition for the PostgreSQL database
-├── render.yaml               # Render service blueprint
-└── README.md                 # Project documentation
+## How It Works
+
+AudioHunt does not call an external recognition API. The recognition logic is implemented in the Go backend.
+
+1. A song is enrolled from the Library page.
+2. The backend converts audio with FFmpeg into a consistent mono sample format.
+3. The DSP pipeline creates a spectrogram, finds strong frequency peaks, and turns peak pairs into compact hashes.
+4. These hashes are stored in PostgreSQL with the song metadata.
+5. During recognition, the browser records a short microphone clip with `MediaRecorder`.
+6. The backend normalizes and fingerprints the query clip.
+7. The matcher compares query hashes against stored song hashes and picks the strongest aligned match.
+8. The frontend displays the match result and saves it in local recognition history.
+
+```mermaid
+flowchart LR
+  User["User plays music"] --> Browser["React frontend"]
+  Browser --> Recorder["Browser MediaRecorder"]
+  Recorder --> API["Go REST API"]
+  API --> FFmpeg["FFmpeg audio normalization"]
+  FFmpeg --> DSP["Spectrogram + peak fingerprinting"]
+  DSP --> Matcher["Windowed hash matching"]
+  Matcher --> DB[("PostgreSQL fingerprint catalog")]
+  DB --> Matcher
+  Matcher --> Result["Song, artist, confidence, timestamp"]
+  Result --> Browser
 ```
 
-## 🚀 Getting Started
+## System Architecture
+
+```mermaid
+flowchart TB
+  subgraph Client["Client Layer"]
+    UI["React + TypeScript + Vite"]
+    Mic["Microphone capture"]
+    History["Local recognition history"]
+  end
+
+  subgraph API["Backend Layer"]
+    Router["Go API with Gorilla Mux"]
+    Songs["Song enrollment service"]
+    Recognition["Recognition service"]
+    Audio["FFmpeg + DSP pipeline"]
+  end
+
+  subgraph Data["Data Layer"]
+    Postgres[("PostgreSQL")]
+    SongRows["songs table"]
+    Fingerprints["stored peak fingerprints"]
+  end
+
+  UI --> Mic
+  UI --> Router
+  Router --> Songs
+  Router --> Recognition
+  Songs --> Audio
+  Recognition --> Audio
+  Songs --> Postgres
+  Recognition --> Postgres
+  Postgres --> SongRows
+  Postgres --> Fingerprints
+```
+
+## Tech Stack
+
+Frontend:
+
+- React 19 for the interactive single-page interface.
+- TypeScript for safer component and API contracts.
+- Vite for fast local development and optimized production builds.
+- Axios for API requests.
+- Browser `MediaRecorder` for microphone capture.
+- Custom CSS for the Shazam-style visual experience.
+
+Backend:
+
+- Go for the REST API and audio-processing pipeline.
+- Gorilla Mux for routing.
+- FFmpeg for reliable audio conversion across MP3, WAV, M4A, WEBM, and other common formats.
+- Custom DSP code for spectrogram generation, peak detection, and hash matching.
+- PostgreSQL for durable song metadata and fingerprint storage.
+- Docker for reproducible backend packaging with FFmpeg available in the runtime.
+
+Database:
+
+- PostgreSQL stores songs, metadata, segment fingerprints, and peak fingerprints.
+- Fingerprints are persisted so the recognizer can survive backend restarts without requiring songs to be reprocessed immediately.
+
+## Why This Stack
+
+React + Vite was chosen because the frontend needs a responsive browser experience with microphone access, fast iteration, and clean production output. TypeScript keeps the UI state machine, API responses, and recognition result objects easier to maintain.
+
+Go was chosen for the backend because audio fingerprinting is CPU-heavy and benefits from a compiled, simple, concurrent runtime. Go also keeps the API small, fast, and easy to package as a single service.
+
+PostgreSQL was chosen because fingerprints are structured data that need durable storage, indexing, and predictable querying. A relational database also makes it easy to keep song metadata and fingerprint data consistent.
+
+FFmpeg was chosen because browser and uploaded audio files can arrive in many formats. Converting everything into a consistent sample rate and channel layout makes the fingerprinting pipeline more predictable.
+
+## Scalability And System Design
+
+The current system is intentionally split into frontend, backend, and database layers. That separation makes the project easier to scale without rewriting the whole app.
+
+- The frontend is static and can be served globally through a CDN.
+- The backend is stateless for API requests, so multiple Go instances can run behind a load balancer.
+- PostgreSQL is the source of truth for the song catalog and fingerprints.
+- The backend keeps an in-memory cache of loaded song fingerprints for faster repeated recognition.
+- Fingerprints are persisted, which reduces dependence on local uploaded files after restart.
+- Recognition and enrollment are separate flows, so enrollment can later move to a background worker without changing the user-facing recognition API.
+- Large audio files can later be stored in object storage such as S3 or Supabase Storage, while PostgreSQL keeps metadata and fingerprints.
+- For bigger catalogs, fingerprint hashes can be indexed or moved into a search-optimized store while keeping the same API shape.
+
+Future scaling direction:
+
+- Add a job queue for long-running song enrollment.
+- Store original audio files in object storage.
+- Add worker services for CPU-heavy fingerprint extraction.
+- Keep the Go API focused on fast recognition requests.
+- Add rate limiting and authentication for public usage.
+- Add observability around enrollment time, recognition latency, and match confidence.
+
+## Project Structure
+
+```text
+AudioHunt/
+├── backend/
+│   ├── cmd/api/                 # Go API entry point
+│   ├── internal/api/            # Router, CORS, health endpoint
+│   ├── internal/audio/          # FFmpeg conversion and DSP pipeline
+│   ├── internal/db/             # PostgreSQL access
+│   ├── internal/matching/       # Hash matching logic
+│   ├── internal/songs/          # Enrollment and recognition services
+│   ├── migrations/              # PostgreSQL schema
+│   ├── uploads/                 # Local development uploads
+│   ├── Dockerfile               # Backend image with FFmpeg
+│   └── go.mod
+├── frontend/
+│   ├── public/                  # Logo and favicon assets
+│   ├── src/components/          # UI components
+│   ├── src/hooks/               # Recording, waveform, history logic
+│   ├── src/pages/               # Recognize, History, Library pages
+│   ├── src/services/api.ts      # API client
+│   ├── src/App.tsx
+│   └── package.json
+├── docker-compose.yml           # Local PostgreSQL database
+├── render.yaml                  # Backend service blueprint
+└── README.md
+```
+
+## Run Locally
 
 ### Prerequisites
 
-- [Go 1.25+](https://golang.org/doc/install)
-- [Node.js](https://nodejs.org/) & npm
-- [Docker Desktop](https://www.docker.com/products/docker-desktop) (for running PostgreSQL)
+- Go 1.25+
+- Node.js and npm
+- Docker Desktop
+- FFmpeg, if running the backend directly outside Docker
 
-### 1. Start the Database
-The backend relies on PostgreSQL. A `docker-compose.yml` file is provided to spin up the database easily with the correct schema migrations.
+### 1. Clone the project
 
 ```bash
-# From the root directory
-docker-compose up -d
+git clone https://github.com/Aggdaksh/AudioHunt-2.git
+cd AudioHunt-2
 ```
-*Note: The database runs on port `5434` to avoid conflicts with local Postgres installations.*
 
-### 2. Run the Go Backend
+### 2. Start PostgreSQL
 
-The backend server processes audio chunks and communicates with the database.
+```bash
+docker compose up -d
+```
+
+The local database runs on port `5434` and automatically loads the SQL files in `backend/migrations`.
+
+### 3. Configure and run the backend
 
 ```bash
 cd backend
+cp .env.example .env
 go mod download
-go run ./cmd/api/main.go
+go run ./cmd/api
 ```
-*The backend server will typically start on `http://localhost:8080`.*
 
-### 3. Run the React Frontend
+Expected backend URL:
 
-Open a new terminal window to start the Vite development server.
+```text
+http://localhost:8080
+```
+
+The local backend `.env` should contain:
+
+```env
+PORT=8080
+DB_DSN=postgres://shazam_user:pass123@localhost:5434/shazam_clone?sslmode=disable
+```
+
+### 4. Configure and run the frontend
+
+Open a second terminal:
 
 ```bash
 cd frontend
+cp .env.example .env
 npm install
 npm run dev
 ```
-*The frontend will be accessible at `http://localhost:5173`. Open this in your browser to interact with the application.*
 
-## 🌐 Deployment (Render + Vercel + Supabase)
+Expected frontend URL:
 
-This repo is now prepared for the stack you picked:
+```text
+http://localhost:5173
+```
 
-- **Frontend:** Vercel
-- **Backend:** Render
-- **Database:** Supabase Postgres
+The local frontend `.env` should contain:
 
-### 1. Create the Supabase database
+```env
+VITE_API_URL=http://localhost:8080
+```
 
-Create a Supabase project, then copy the Postgres connection string and use it as `DB_DSN` on Render.
+### 5. Try the app
 
-Run the SQL from:
+1. Open the Library tab.
+2. Upload a song and enter a clean title and artist.
+3. Open the Recognize tab.
+4. Play that enrolled song loudly near the mic for 8 to 10 seconds.
+5. Press Stop and wait for the match result.
 
-- `backend/migrations/001_init.sql`
-- `backend/migrations/002_hash_segments.sql`
+## API Overview
 
-### 2. Deploy the backend to Render
+```text
+GET  /api/health      Check backend status
+GET  /api/songs       List enrolled songs
+POST /api/songs       Enroll a song file with title and artist
+POST /api/recognize   Recognize a microphone recording
+```
 
-This repo includes:
+## Current Limitations
 
-- `backend/Dockerfile`
-- `render.yaml`
-- `backend/.env.example`
+- Enrollment can take time for full-length songs because the backend extracts fingerprints from the uploaded audio.
+- Free hosted backend instances may sleep after inactivity, so the first request can be slower.
+- Recognition quality depends on microphone quality, speaker distance, background noise, and whether the song has already been enrolled.
+- This is a portfolio/educational project, so only use audio that you are allowed to upload and demo.
 
-Why Docker on Render:
+## Author
 
-- the backend needs `ffmpeg`
-- Docker makes the backend environment reproducible
-- Render can build directly from the backend folder using the included blueprint
+Made by Daksh Aggarwal.
 
-Required Render env vars:
+- Email: [daksh121105@gmail.com](mailto:daksh121105@gmail.com)
+- LinkedIn: [daksh-aggarwal-a5938028b](https://www.linkedin.com/in/daksh-aggarwal-a5938028b/)
 
-- `PORT=8080`
-- `DB_DSN=<your-supabase-connection-string>`
+## License
 
-### 3. Deploy the frontend to Vercel
-
-Use the `frontend` folder as the Vercel project root.
-
-Required Vercel env var:
-
-- `VITE_API_URL=https://<your-render-backend>.onrender.com`
-
-The example file is:
-
-- `frontend/.env.example`
-
-### 4. Re-enroll demo songs after deploy
-
-For a fresh cloud deployment, upload songs again through the Library page after the backend and database are live.
-
-Important note:
-
-- peak fingerprints are now persisted in Postgres, so recognition can survive free-host restarts better
-- original uploaded audio files on a free backend host should still be treated as temporary
-
-## ⚠️ Portfolio note
-
-If this is a public resume project, use audio you are allowed to host and demo. For a portfolio deployment, royalty-free tracks or your own sample audio are the safest choice.
-
-## 🧠 How it Works (Under the Hood)
-
-1. **Recording:** The user clicks the record button on the frontend. `RecordRTC` captures the audio via the browser's MediaRecorder API and converts it into a valid audio format (like `.wav`).
-2. **Transmission:** The chunk is sent to the backend `/api/recognize` endpoint via a `multipart/form-data` POST request.
-3. **Signal Processing:** The Go backend fingerprints enrolled songs from clean source audio and fingerprints microphone queries with extra denoise and loudness normalization.
-4. **Matching:** The backend compares the query against stored song fingerprints. For best results, play an enrolled song near the mic for 8-10 seconds.
-5. **Results:** The backend returns the best-matching song with its confidence score, which the frontend displays to the user in a beautiful result card.
-
-## 📝 License
-This project is for educational and portfolio purposes.
+This project is for educational and portfolio use.
