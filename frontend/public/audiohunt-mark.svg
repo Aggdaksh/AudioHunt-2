@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">AudioHunt logo</title>
+  <desc id="desc">A blue and teal circular audio ripple mark.</desc>
+  <defs>
+    <linearGradient id="audiohunt-gradient" x1="44" x2="214" y1="44" y2="214" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2fd3b6"/>
+      <stop offset="1" stop-color="#2d72db"/>
+    </linearGradient>
+  </defs>
+  <g fill="none" stroke="url(#audiohunt-gradient)" stroke-linecap="round" stroke-width="16">
+    <path d="M105 76a54 54 0 1 0 0 104"/>
+    <path d="M74 54a92 92 0 1 0 0 148"/>
+    <path d="M150 74a56 56 0 0 1 0 108"/>
+    <path d="M166 50a86 86 0 0 1 0 156"/>
+    <path d="M182 26a116 116 0 0 1 0 204"/>
+  </g>
+  <circle cx="128" cy="128" r="40" fill="url(#audiohunt-gradient)"/>
+</svg>

@@ -1,0 +1,18 @@
+services:
+  db:
+    image: postgres:15
+
+    environment:
+      POSTGRES_USER: shazam_user
+      POSTGRES_PASSWORD: pass123
+      POSTGRES_DB: shazam_clone
+
+    ports:
+      - "5434:5432"
+
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backend/migrations:/docker-entrypoint-initdb.d
+
+volumes:
+  pgdata:

@@ -1,0 +1,11 @@
+.env
+.DS_Store
+main
+scratch/
+uploads/
+*.wav
+*.mp3
+*.log
+test*.go
+snippet*
+short.wav
