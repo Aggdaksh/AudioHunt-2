@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 
 	_ "github.com/lib/pq"
 )
@@ -49,6 +50,8 @@ type PeakFingerprint struct {
 	Offset int
 }
 
+const fingerprintInsertBatchSize = 1000
+
 // InsertSong adds a song with segment fingerprint and returns its ID.
 func InsertSong(title, artist, filePath, fingerprint string, hashSegments []string) (int, error) {
 	segmentsJSON, err := json.Marshal(hashSegments)
@@ -92,18 +95,8 @@ func InsertSongWithPeakFingerprints(
 		return 0, err
 	}
 
-	if len(peakFingerprints) > 0 {
-		stmt, err := tx.Prepare(`INSERT INTO fingerprints (hash, song_id, time_offset) VALUES ($1, $2, $3)`)
-		if err != nil {
-			return 0, err
-		}
-		defer stmt.Close()
-
-		for _, fp := range peakFingerprints {
-			if _, err := stmt.Exec(int64(fp.Hash), id, fp.Offset); err != nil {
-				return 0, err
-			}
-		}
+	if err := insertPeakFingerprintsTx(tx, id, peakFingerprints); err != nil {
+		return 0, err
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -124,21 +117,39 @@ func InsertPeakFingerprints(songID int, peakFingerprints []PeakFingerprint) erro
 		return err
 	}
 
-	if len(peakFingerprints) > 0 {
-		stmt, err := tx.Prepare(`INSERT INTO fingerprints (hash, song_id, time_offset) VALUES ($1, $2, $3)`)
-		if err != nil {
-			return err
-		}
-		defer stmt.Close()
-
-		for _, fp := range peakFingerprints {
-			if _, err := stmt.Exec(int64(fp.Hash), songID, fp.Offset); err != nil {
-				return err
-			}
-		}
+	if err := insertPeakFingerprintsTx(tx, songID, peakFingerprints); err != nil {
+		return err
 	}
 
 	return tx.Commit()
+}
+
+func insertPeakFingerprintsTx(tx *sql.Tx, songID int, peakFingerprints []PeakFingerprint) error {
+	for start := 0; start < len(peakFingerprints); start += fingerprintInsertBatchSize {
+		end := start + fingerprintInsertBatchSize
+		if end > len(peakFingerprints) {
+			end = len(peakFingerprints)
+		}
+
+		var query strings.Builder
+		args := make([]interface{}, 0, (end-start)*3)
+		query.WriteString(`INSERT INTO fingerprints (hash, song_id, time_offset) VALUES `)
+
+		for i, fp := range peakFingerprints[start:end] {
+			if i > 0 {
+				query.WriteString(",")
+			}
+			arg := len(args) + 1
+			fmt.Fprintf(&query, "($%d,$%d,$%d)", arg, arg+1, arg+2)
+			args = append(args, int64(fp.Hash), songID, fp.Offset)
+		}
+
+		if _, err := tx.Exec(query.String(), args...); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func GetPeakFingerprints(songID int) ([]PeakFingerprint, error) {
