@@ -74,6 +74,9 @@ export const enrollSong = async (
       headers: {
         'Content-Type': 'multipart/form-data',
       },
+      timeout: 150000,
+      timeoutErrorMessage:
+        'Enrollment took too long on the free cloud server. Please try a shorter file or retry after the backend wakes up.',
     }
   );
 

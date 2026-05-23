@@ -24,8 +24,20 @@ func Connect(dsn string) error {
 		return fmt.Errorf("failed to ping DB: %w", err)
 	}
 
+	if err = ensureRuntimeSchema(); err != nil {
+		return fmt.Errorf("failed to ensure DB schema: %w", err)
+	}
+
 	log.Println("Connected to database")
 	return nil
+}
+
+func ensureRuntimeSchema() error {
+	_, err := DB.Exec(`
+		ALTER TABLE IF EXISTS songs
+		ADD COLUMN IF NOT EXISTS peak_fingerprints JSONB DEFAULT '[]'::jsonb
+	`)
+	return err
 }
 
 // Close closes the database connection.
@@ -37,17 +49,18 @@ func Close() {
 
 // Song represents a row in the songs table.
 type Song struct {
-	ID           int
-	Title        string
-	Artist       string
-	FilePath     string
-	Fingerprint  string
-	HashSegments []string
+	ID               int
+	Title            string
+	Artist           string
+	FilePath         string
+	Fingerprint      string
+	HashSegments     []string
+	PeakFingerprints []PeakFingerprint
 }
 
 type PeakFingerprint struct {
-	Hash   uint32
-	Offset int
+	Hash   uint32 `json:"hash"`
+	Offset int    `json:"offset"`
 }
 
 const fingerprintInsertBatchSize = 1000
@@ -79,6 +92,10 @@ func InsertSongWithPeakFingerprints(
 	if err != nil {
 		return 0, err
 	}
+	peaksJSON, err := json.Marshal(peakFingerprints)
+	if err != nil {
+		return 0, err
+	}
 
 	tx, err := DB.Begin()
 	if err != nil {
@@ -88,14 +105,10 @@ func InsertSongWithPeakFingerprints(
 
 	var id int
 	if err := tx.QueryRow(
-		`INSERT INTO songs (title, artist, file_path, fingerprint, hash_segments)
-		 VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-		title, artist, filePath, fingerprint, segmentsJSON,
+		`INSERT INTO songs (title, artist, file_path, fingerprint, hash_segments, peak_fingerprints)
+		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+		title, artist, filePath, fingerprint, segmentsJSON, peaksJSON,
 	).Scan(&id); err != nil {
-		return 0, err
-	}
-
-	if err := insertPeakFingerprintsTx(tx, id, peakFingerprints); err != nil {
 		return 0, err
 	}
 
@@ -107,6 +120,14 @@ func InsertSongWithPeakFingerprints(
 }
 
 func InsertPeakFingerprints(songID int, peakFingerprints []PeakFingerprint) error {
+	peaksJSON, err := json.Marshal(peakFingerprints)
+	if err != nil {
+		return err
+	}
+	if _, err := DB.Exec(`UPDATE songs SET peak_fingerprints = $2 WHERE id = $1`, songID, peaksJSON); err == nil {
+		return nil
+	}
+
 	tx, err := DB.Begin()
 	if err != nil {
 		return err
@@ -183,7 +204,7 @@ func GetPeakFingerprints(songID int) ([]PeakFingerprint, error) {
 // GetSongsWithSegments returns enrolled songs that have segment fingerprints.
 func GetSongsWithSegments() ([]Song, error) {
 	rows, err := DB.Query(`
-		SELECT id, title, artist, file_path, fingerprint, hash_segments
+		SELECT id, title, artist, file_path, fingerprint, hash_segments, COALESCE(peak_fingerprints, '[]'::jsonb)
 		FROM songs
 		WHERE hash_segments IS NOT NULL AND jsonb_array_length(hash_segments) > 0
 		ORDER BY id
@@ -197,10 +218,12 @@ func GetSongsWithSegments() ([]Song, error) {
 	for rows.Next() {
 		var s Song
 		var segmentsJSON []byte
-		if err := rows.Scan(&s.ID, &s.Title, &s.Artist, &s.FilePath, &s.Fingerprint, &segmentsJSON); err != nil {
+		var peaksJSON []byte
+		if err := rows.Scan(&s.ID, &s.Title, &s.Artist, &s.FilePath, &s.Fingerprint, &segmentsJSON, &peaksJSON); err != nil {
 			continue
 		}
 		_ = json.Unmarshal(segmentsJSON, &s.HashSegments)
+		_ = json.Unmarshal(peaksJSON, &s.PeakFingerprints)
 		if len(s.HashSegments) > 0 {
 			songs = append(songs, s)
 		}

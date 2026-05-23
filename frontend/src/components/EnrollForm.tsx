@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { enrollSong } from '../services/api';
 
 interface EnrollFormProps {
@@ -19,6 +19,27 @@ export default function EnrollForm({ onEnrolled }: EnrollFormProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [status, setStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState('');
+  const [uploadHint, setUploadHint] = useState('');
+
+  useEffect(() => {
+    if (status !== 'uploading') {
+      setUploadHint('');
+      return;
+    }
+
+    setUploadHint('Uploading and fingerprinting your track...');
+    const firstHint = window.setTimeout(() => {
+      setUploadHint('Still fingerprinting on the cloud server. Keep this tab open.');
+    }, 10000);
+    const secondHint = window.setTimeout(() => {
+      setUploadHint('Large songs can take around a minute on the free deployment.');
+    }, 45000);
+
+    return () => {
+      window.clearTimeout(firstHint);
+      window.clearTimeout(secondHint);
+    };
+  }, [status]);
 
   const assignFile = (file: File | null) => {
     if (!file) {
@@ -139,6 +160,12 @@ export default function EnrollForm({ onEnrolled }: EnrollFormProps) {
         </button>
         {status === 'uploading' ? <div className="progress-rail" aria-hidden="true" /> : null}
       </div>
+
+      {uploadHint ? (
+        <div className="form-message form-message--info">
+          {uploadHint}
+        </div>
+      ) : null}
 
       {message ? (
         <div className={`form-message form-message--${status === 'success' ? 'success' : 'error'}`}>

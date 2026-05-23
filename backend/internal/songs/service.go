@@ -160,6 +160,14 @@ func (s *Service) getSongPeakFingerprints(song *db.Song) ([]dsp.Fingerprint, err
 	}
 	s.mu.RUnlock()
 
+	if len(song.PeakFingerprints) > 0 {
+		fps := toDSPFingerprints(song.PeakFingerprints)
+		s.mu.Lock()
+		s.peakFingerprints[song.ID] = fps
+		s.mu.Unlock()
+		return fps, nil
+	}
+
 	storedFingerprints, err := db.GetPeakFingerprints(song.ID)
 	if err == nil && len(storedFingerprints) > 0 {
 		fps := toDSPFingerprints(storedFingerprints)

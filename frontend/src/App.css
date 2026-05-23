@@ -910,6 +910,12 @@
   color: #ffabab;
 }
 
+.form-message--info {
+  background: rgba(89, 224, 200, 0.08);
+  border: 1px solid rgba(89, 224, 200, 0.2);
+  color: var(--color-text-soft);
+}
+
 .bottom-nav {
   position: fixed;
   left: 50%;

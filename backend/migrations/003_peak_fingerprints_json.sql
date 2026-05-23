@@ -1,0 +1,2 @@
+ALTER TABLE IF EXISTS songs
+ADD COLUMN IF NOT EXISTS peak_fingerprints JSONB DEFAULT '[]'::jsonb;
